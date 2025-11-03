@@ -1,7 +1,10 @@
 "use client";
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 
-const MAX_CHARS = 20000; // keep in sync with backend Zod schema
+const MAX_CHARS = 20000;
+const LS_TEXT = "summarize:text";
+const LS_RESUME = "summarize:resume";
 
 export default function Home() {
   const [text, setText] = useState("");
@@ -9,19 +12,100 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fail fast if the env var is missing
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE;
-  if (!apiBase && typeof window !== "undefined") {
-    // Render a clear message for local dev misconfig
-    return (
-      <main className="max-w-3xl mx-auto p-6 space-y-4">
-        <h1 className="text-3xl font-bold">SummarAIze</h1>
-        <p className="text-red-600">
-          Missing <code>NEXT_PUBLIC_API_BASE</code> in <code>.env.local</code>.
-          Add e.g. <code>NEXT_PUBLIC_API_BASE=http://localhost:4000/api</code> and restart <code>npm run dev</code>.
-        </p>
-      </main>
-    );
+  const {
+    isAuthenticated,
+    isLoading: authLoading,
+    loginWithRedirect,
+    logout,
+    getAccessTokenSilently,
+    user,
+    error: authError,
+  } = useAuth0();
+
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "";
+  const audience = process.env.NEXT_PUBLIC_AUTH0_AUDIENCE ?? "";
+
+  // Restore textarea after redirects
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(LS_TEXT);
+    if (saved) setText(saved);
+  }, []);
+
+  // Auto-resume summarize after returning from Auth0
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const shouldResume = localStorage.getItem(LS_RESUME) === "1";
+    if (isAuthenticated && shouldResume && text.trim()) {
+      localStorage.removeItem(LS_RESUME);
+      void doSummarize(text.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  async function getApiToken(): Promise<string> {
+    try {
+      const token = await getAccessTokenSilently({
+        authorizationParams: { audience },
+      });
+      if (!token) throw new Error("No access token");
+      return token;
+    } catch (e: any) {
+      const code = String(e?.error || e?.code || "").toLowerCase();
+      if (
+        code.includes("login_required") ||
+        code.includes("consent_required") ||
+        code.includes("interaction_required")
+      ) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(LS_RESUME, "1");
+          localStorage.setItem(LS_TEXT, text);
+        }
+        await loginWithRedirect({
+          authorizationParams: { audience, prompt: "login" },
+        });
+      }
+      throw e;
+    }
+  }
+
+  async function doSummarize(trimmed: string) {
+    if (!apiBase) {
+      setError(
+        "Missing NEXT_PUBLIC_API_BASE in .env.local (e.g. http://localhost:4000/api). Restart dev server after adding."
+      );
+      return;
+    }
+
+    setLoading(true);
+    setSummary("");
+    setError(null);
+
+    try {
+      const token = await getApiToken();
+      const res = await fetch(`${apiBase}/summarize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ text: trimmed }),
+      });
+
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        const msg =
+          (data?.detail as string) ||
+          (data?.error as string) ||
+          `Request failed (${res.status})`;
+        throw new Error(msg);
+      }
+      setSummary(typeof data?.summary === "string" ? data.summary : "");
+    } catch (err: any) {
+      setError(err?.message || "Failed to summarize.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSummarize(e?: FormEvent) {
@@ -32,35 +116,7 @@ export default function Home() {
       setError(`Input is too long (${trimmed.length} chars). Max is ${MAX_CHARS}.`);
       return;
     }
-
-    setLoading(true);
-    setSummary("");
-    setError(null);
-
-    try {
-      const res = await fetch(`${apiBase}/summarize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed }),
-      });
-
-      // Attempt to parse JSON either way for better error surfacing
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const msg =
-          typeof data?.error === "string"
-            ? data.error
-            : `Request failed (${res.status})`;
-        throw new Error(msg);
-      }
-
-      setSummary(typeof data?.summary === "string" ? data.summary : "");
-    } catch (err: any) {
-      setError(err?.message || "Failed to summarize. Check backend/API key.");
-    } finally {
-      setLoading(false);
-    }
+    await doSummarize(trimmed);
   }
 
   const chars = text.length;
@@ -68,7 +124,39 @@ export default function Home() {
 
   return (
     <main className="max-w-3xl mx-auto p-6 space-y-4">
-      <h1 className="text-3xl font-bold">SummarAIze</h1>
+      {/* Header with Login/Logout */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">SummarAIze</h1>
+        <div className="text-sm flex items-center gap-3">
+          {authLoading ? (
+            <span>Auth…</span>
+          ) : isAuthenticated ? (
+            <>
+              <span className="opacity-70">{user?.name || user?.email}</span>
+              <button
+                className="px-3 py-1 rounded border"
+                onClick={() =>
+                  logout({ logoutParams: { returnTo: window.location.origin } })
+                }
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <button
+              className="px-3 py-1 rounded border"
+              onClick={() =>
+                loginWithRedirect({
+                  authorizationParams: { audience, prompt: "login" },
+                })
+              }
+            >
+              Login
+            </button>
+          )}
+        </div>
+      </div>
+
       <p className="text-sm text-gray-500">Paste your notes and click Summarize.</p>
 
       <form onSubmit={handleSummarize} className="space-y-3">
@@ -78,7 +166,11 @@ export default function Home() {
           }`}
           placeholder="Paste your notes here…"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (typeof window !== "undefined")
+              localStorage.setItem(LS_TEXT, e.target.value);
+          }}
           aria-invalid={tooLong}
           aria-describedby="charHelp"
         />
@@ -86,7 +178,8 @@ export default function Home() {
           <span id="charHelp">
             {tooLong ? (
               <span className="text-red-600">
-                {chars.toLocaleString()} / {MAX_CHARS.toLocaleString()} (too long)
+                {chars.toLocaleString()} / {MAX_CHARS.toLocaleString()} (too
+                long)
               </span>
             ) : (
               <span>
@@ -95,16 +188,21 @@ export default function Home() {
             )}
           </span>
           <button
-            type="submit"
-            onClick={() => void 0}
-            className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
-            disabled={!text.trim() || loading || tooLong}
-          >
-            {loading ? "Summarizing…" : "Summarize"}
+              type="submit"
+              className="px-6 py-2 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50 hover:bg-blue-500 transition"
+              disabled={!text.trim() || loading || tooLong}   // <- removed authLoading
+            >
+              {loading ? "Summarizing…" : "Summarize"}
           </button>
+
         </div>
       </form>
 
+      {authError && (
+        <p className="text-sm text-red-600">
+          Auth error: {String(authError.message || authError)}
+        </p>
+      )}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {summary && (

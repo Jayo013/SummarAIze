@@ -1,27 +1,63 @@
 // backend/src/server.ts
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { z } from "zod";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createRemoteJWKSet, jwtVerify } from "jose-node-cjs-runtime";
+
+
 
 dotenv.config();
 
+/* ---------------------------- App & Middleware ---------------------------- */
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" }));
 
-// Health check
+/* --------------------------------- Health -------------------------------- */
 app.get("/api/health", (_req: Request, res: Response) => res.json({ ok: true }));
 
-// Validate input
+/* ------------------------------- Validation ------------------------------ */
 const Body = z.object({ text: z.string().min(1).max(20000) });
 
-// Use a free-tier Gemini model by default; allow override via env
+/* ------------------------------- Providers ------------------------------- */
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash"; // or "gemini-2.5-flash-lite"
 
-app.post("/api/summarize", async (req: Request, res: Response) => {
+/* ------------------------------- Auth (JOSE) ------------------------------ */
+// Required env:
+const AUTH0_DOMAIN = process.env.AUTH0_DOMAIN || "";            // e.g. dev-xxx.us.auth0.com
+const AUTH0_AUDIENCE = process.env.AUTH0_AUDIENCE || "";        // e.g. https://summaraize.api
+
+const ISSUER = AUTH0_DOMAIN ? `https://${AUTH0_DOMAIN}/` : "";
+const JWKS = AUTH0_DOMAIN ? createRemoteJWKSet(new URL(`${ISSUER}.well-known/jwks.json`)) : null;
+
+function unauthorized(res: Response, detail?: string) {
+  return res.status(401).json({ error: "Unauthorized", detail });
+}
+
+// Express middleware to validate Auth0 Access Token using jose
+async function checkJwtJose(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!JWKS || !AUTH0_AUDIENCE || !ISSUER) {
+      return unauthorized(res, "Auth not configured on server (missing AUTH0_* envs).");
+    }
+    const auth = req.headers.authorization || "";
+    const [scheme, token] = auth.split(" ");
+    if (scheme?.toLowerCase() !== "bearer" || !token) {
+      return unauthorized(res, "Missing Bearer token");
+    }
+    const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER, audience: AUTH0_AUDIENCE });
+    (req as any).auth = payload; // attach claims if needed
+    return next();
+  } catch (e: any) {
+    return unauthorized(res, String(e?.message || e));
+  }
+}
+
+/* --------------------------- Protected Summarize -------------------------- */
+app.post("/api/summarize", checkJwtJose, async (req: Request, res: Response) => {
   try {
     const { text } = Body.parse(req.body);
 
@@ -30,14 +66,9 @@ app.post("/api/summarize", async (req: Request, res: Response) => {
       try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
-
-        const prompt =
-          `Summarize the following notes into exactly 5 concise, factual bullet points.\n\n${text}`;
-
-        // (String prompt is fine; the SDK will wrap it)
+        const prompt = `Summarize the following notes into exactly 5 concise, factual bullet points.\n\n${text}`;
         const result = await model.generateContent(prompt);
         const summary = result.response.text().trim();
-
         if (summary) {
           return res.json({ summary, provider: "gemini", model: GEMINI_MODEL });
         }
@@ -58,7 +89,6 @@ app.post("/api/summarize", async (req: Request, res: Response) => {
             { role: "user", content: text },
           ],
         });
-
         const summary = completion.choices?.[0]?.message?.content?.trim() ?? "";
         if (summary) {
           return res.json({ summary, provider: "openai", model: "gpt-4o-mini" });
@@ -66,15 +96,13 @@ app.post("/api/summarize", async (req: Request, res: Response) => {
         throw new Error("OpenAI returned an empty response.");
       } catch (oerr: any) {
         console.error("[OpenAI] error:", oerr?.message || oerr);
-
-        // If it's a quota error, surface a 429 so the UI shows a clear message.
         if (String(oerr?.message || "").includes("exceeded your current quota")) {
           return res.status(429).json({
             error: "OpenAI quota exceeded. Check plan/billing or use Gemini.",
             provider: "openai",
           });
         }
-        // Otherwise, continue to demo response.
+        // fall through to demo
       }
     }
 
@@ -83,7 +111,7 @@ app.post("/api/summarize", async (req: Request, res: Response) => {
       summary:
         "• (Demo) No AI provider responded\n" +
         `• Gemini model tried: ${GEMINI_MODEL}\n` +
-        "• Tip: use GEMINI_MODEL=gemini-2.0-flash (free tier) with an AI Studio key\n" +
+        "• Tip: set GEMINI_API_KEY (AI Studio) with gemini-2.0-flash\n" +
         "• Or add OPENAI_API_KEY (with quota)\n" +
         `• Input length: ${text.length} chars`,
       provider: "demo",
@@ -91,16 +119,14 @@ app.post("/api/summarize", async (req: Request, res: Response) => {
   } catch (err: any) {
     const msg = String(err?.message || err);
 
-    // Helpful mapping for common Gemini misconfig
     if (msg.includes("ListModels") || msg.includes("404 Not Found") || msg.includes("models/gemini-pro")) {
       return res.status(400).json({
         error:
-          "Gemini model unavailable. Use 'gemini-2.0-flash' or 'gemini-2.5-flash-lite' and ensure the Generative Language API is enabled for your key/project.",
+          "Gemini model unavailable. Use 'gemini-2.0-flash' or 'gemini-2.5-flash-lite' and ensure Generative Language API is enabled.",
         provider: "gemini",
         model: GEMINI_MODEL,
       });
     }
-
     if (msg.includes('at "text"')) {
       return res.status(400).json({ error: "Invalid body. Provide non-empty 'text' ≤ 20,000 chars." });
     }
@@ -110,5 +136,6 @@ app.post("/api/summarize", async (req: Request, res: Response) => {
   }
 });
 
+/* --------------------------------- Start --------------------------------- */
 const PORT = Number(process.env.PORT || 4000);
 app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
