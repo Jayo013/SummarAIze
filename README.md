@@ -45,8 +45,9 @@ Secure login, history storage, and beautiful Tailwind styling included.
 
 ---
 
-## 📦 Project Structure
+### 📁 Project Structure
 
+```bash
 SummarAIze/
 ├── backend/                     # Express API (TypeScript)
 │   ├── src/
@@ -68,4 +69,6 @@ SummarAIze/
 │   └── tsconfig.json
 │
 └── README.md                    # Project documentation
+```
+
 
