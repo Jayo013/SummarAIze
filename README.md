@@ -48,21 +48,24 @@ Secure login, history storage, and beautiful Tailwind styling included.
 ## 📦 Project Structure
 
 SummarAIze/
-├── backend/
-│ ├── src/
-│ │ └── server.ts # Express API with Gemini/OpenAI + DynamoDB
-│ ├── .env # Backend env vars
-│ ├── package.json
-│ └── tsconfig.json
+├── backend/                     # Express API (TypeScript)
+│   ├── src/
+│   │   └── server.ts            # Main server: Auth0 JWT check + AI + DynamoDB
+│   ├── .env                     # Backend env vars (NOT committed)
+│   ├── package.json
+│   └── tsconfig.json
 │
-├── frontend/
-│ ├── app/
-│ │ ├── layout.tsx # Layout + Auth0Provider wrapper
-│ │ ├── page.tsx # Main UI + Summarization
-│ │ └── globals.css # Tailwind base styles
-│ ├── .env.local # Frontend env vars
-│ ├── postcss.config.mjs
-│ ├── tailwind.config.js
-│ └── package.json
+├── frontend/                    # Next.js + Tailwind app
+│   ├── app/
+│   │   ├── layout.tsx           # Root layout + Auth0Provider wrapper
+│   │   ├── page.tsx             # SummarAIze UI (textarea, summary, export)
+│   │   └── globals.css          # Tailwind base styles and theme
+│   ├── public/                  # Static assets (icons, images)
+│   ├── .env.local               # Frontend env vars (NOT committed)
+│   ├── postcss.config.mjs       # Tailwind/PostCSS config
+│   ├── tailwind.config.js       # Tailwind config
+│   ├── package.json
+│   └── tsconfig.json
 │
-└── README.md
+└── README.md                    # Project documentation
+
