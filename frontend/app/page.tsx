@@ -15,6 +15,8 @@ export default function Home() {
   const [summaryProvider, setSummaryProvider] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
   const {
     isAuthenticated,
@@ -183,6 +185,63 @@ export default function Home() {
     }
   }
 
+  const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setUploadNotice(null);
+    setError(null);
+
+    const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      setError("Unsupported file type. Only PDF, DOCX, and TXT are allowed.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("File is too large. Maximum size is 10MB.");
+      return;
+    }
+    if (!apiBase) {
+      setError("Missing NEXT_PUBLIC_API_BASE in .env.local.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const token = await getApiToken();
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${apiBase}/documents/extract`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        throw new Error((data?.error as string) || `Upload failed (${res.status})`);
+      }
+
+      const extracted = typeof data?.text === "string" ? data.text : "";
+      setText(extracted);
+      if (typeof window !== "undefined") localStorage.setItem(LS_TEXT, extracted);
+      setUploadNotice(
+        data?.truncated
+          ? `Loaded "${data.fileName}" — text was truncated to ${MAX_CHARS.toLocaleString()} characters.`
+          : `Loaded "${data.fileName}" (${data.charCount.toLocaleString()} characters).`
+      );
+    } catch (err: any) {
+      setError(err?.message || "Failed to extract text from file.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleSummarize(e?: FormEvent) {
     e?.preventDefault();
     const trimmed = text.trim();
@@ -254,6 +313,17 @@ export default function Home() {
               {SUMMARY_MODE_LABELS[m]}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <label
+            className={`px-3 py-1.5 rounded-lg border border-white/20 cursor-pointer hover:border-white/40 transition ${
+              uploading ? "opacity-50 pointer-events-none" : ""
+            }`}
+          >
+            {uploading ? "Reading file…" : "Upload document (.pdf, .docx, .txt)"}
+            <input type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={handleFileChange} disabled={uploading} />
+          </label>
+          {uploadNotice && <span className="text-gray-400">{uploadNotice}</span>}
         </div>
         <textarea
           className={`w-full h-48 p-3 rounded border outline-none ${
