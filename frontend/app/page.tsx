@@ -1,14 +1,18 @@
 "use client";
 import { useEffect, useState, FormEvent } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { SUMMARY_MODES, SUMMARY_MODE_LABELS, type SummaryMode } from "./summaryModes";
 
 const MAX_CHARS = 20000;
 const LS_TEXT = "summarize:text";
 const LS_RESUME = "summarize:resume";
+const LS_MODE = "summarize:mode";
 
 export default function Home() {
   const [text, setText] = useState("");
+  const [mode, setMode] = useState<SummaryMode>("quick");
   const [summary, setSummary] = useState("");
+  const [summaryProvider, setSummaryProvider] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,11 +96,13 @@ export default function Home() {
   }
   // -------------------------------
 
-  // Restore textarea after redirects
+  // Restore textarea and mode after redirects
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem(LS_TEXT);
     if (saved) setText(saved);
+    const savedMode = localStorage.getItem(LS_MODE) as SummaryMode | null;
+    if (savedMode && SUMMARY_MODES.includes(savedMode)) setMode(savedMode);
   }, []);
 
   // Auto-resume summarize after returning from Auth0
@@ -146,6 +152,7 @@ export default function Home() {
 
     setLoading(true);
     setSummary("");
+    setSummaryProvider("");
     setError(null);
 
     try {
@@ -156,7 +163,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ text: trimmed }),
+        body: JSON.stringify({ text: trimmed, mode }),
       });
 
       const data = await res.json().catch(() => ({} as any));
@@ -168,6 +175,7 @@ export default function Home() {
         throw new Error(msg);
       }
       setSummary(typeof data?.summary === "string" ? data.summary : "");
+      setSummaryProvider(typeof data?.provider === "string" ? data.provider : "");
     } catch (err: any) {
       setError(err?.message || "Failed to summarize.");
     } finally {
@@ -227,6 +235,26 @@ export default function Home() {
       <p className="text-sm text-gray-400">Paste your notes and click Summarize.</p>
 
       <form onSubmit={handleSummarize} className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {SUMMARY_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setMode(m);
+                if (typeof window !== "undefined") localStorage.setItem(LS_MODE, m);
+              }}
+              className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                mode === m
+                  ? "bg-blue-600 border-blue-600 text-white"
+                  : "border-white/20 text-gray-300 hover:border-white/40"
+              }`}
+              aria-pressed={mode === m}
+            >
+              {SUMMARY_MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
         <textarea
           className={`w-full h-48 p-3 rounded border outline-none ${
             tooLong ? "border-red-500" : "border-white/20 bg-black/40"
@@ -272,7 +300,14 @@ export default function Home() {
 
       {summary && (
         <section className="p-5 rounded-xl border border-white/10 bg-white/5 shadow-inner space-y-3">
-          <h2 className="text-lg font-semibold">Summary</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">{SUMMARY_MODE_LABELS[mode]}</h2>
+            {summaryProvider && (
+              <span className="text-xs px-2 py-0.5 rounded-full border border-white/20 text-gray-400">
+                {summaryProvider}
+              </span>
+            )}
+          </div>
           <pre className="whitespace-pre-wrap leading-relaxed">{summary}</pre>
 
           {/* Export / Share actions */}

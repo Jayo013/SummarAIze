@@ -14,6 +14,7 @@ export async function saveSummary(params: {
   outputText: string;
   provider: string;
   model?: string;
+  mode: string;
 }) {
   const user = await upsertUser(params.auth0Sub);
   return prisma.summary.create({
@@ -23,6 +24,7 @@ export async function saveSummary(params: {
       outputText: params.outputText,
       provider: params.provider,
       model: params.model,
+      mode: params.mode,
     },
   });
 }

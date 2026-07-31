@@ -23,6 +23,7 @@ model Summary {
   outputText String
   provider   String
   model      String?
+  mode       String   @default("quick")
   createdAt  DateTime @default(now())
 
   @@index([userId])
