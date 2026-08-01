@@ -19,12 +19,14 @@ model Summary {
   id         String   @id @default(uuid())
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inputText  String
-  outputText String
-  provider   String
-  model      String?
-  mode       String   @default("quick")
-  createdAt  DateTime @default(now())
+  inputText       String
+  outputText      String
+  provider        String
+  model           String?
+  mode            String   @default("quick")
+  inputWordCount  Int      @default(0)
+  outputWordCount Int      @default(0)
+  createdAt       DateTime @default(now())
 
   @@index([userId])
   @@index([createdAt])

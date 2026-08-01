@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Summary" ADD COLUMN     "inputWordCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "outputWordCount" INTEGER NOT NULL DEFAULT 0;

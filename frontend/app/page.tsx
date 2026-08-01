@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
 import { useAuth0 } from "@auth0/auth0-react";
 import { SUMMARY_MODES, SUMMARY_MODE_LABELS, type SummaryMode } from "./summaryModes";
 
@@ -262,6 +263,9 @@ export default function Home() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">SummarAIze</h1>
         <div className="text-sm flex items-center gap-3">
+          <Link href="/dashboard" className="px-3 py-1 rounded border border-white/20 hover:border-white/40 transition">
+            Dashboard
+          </Link>
           {authLoading ? (
             <span>Auth…</span>
           ) : isAuthenticated ? (

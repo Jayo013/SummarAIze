@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { countWords } from "../utils/text";
 
 async function upsertUser(auth0Sub: string) {
   return prisma.user.upsert({
@@ -25,6 +26,8 @@ export async function saveSummary(params: {
       provider: params.provider,
       model: params.model,
       mode: params.mode,
+      inputWordCount: countWords(params.inputText),
+      outputWordCount: countWords(params.outputText),
     },
   });
 }
