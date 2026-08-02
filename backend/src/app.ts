@@ -14,6 +14,10 @@ export function createApp() {
   app.use(cors({ origin: env.FRONTEND_ORIGIN }));
   app.use(express.json({ limit: "1mb" }));
   app.use(requestLogger);
+
+  // /api/v1 is canonical; /api stays mounted on the same router as a backward-compatible
+  // alias so existing frontend builds (NEXT_PUBLIC_API_BASE=.../api) keep working unchanged.
+  app.use("/api/v1", apiRateLimiter, apiRouter);
   app.use("/api", apiRateLimiter, apiRouter);
 
   app.use(notFoundHandler);
