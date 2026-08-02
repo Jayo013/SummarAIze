@@ -13,6 +13,10 @@ model User {
   email     String?
   createdAt DateTime  @default(now())
   summaries Summary[]
+
+  preferredProvider      String?
+  preferredMode          String  @default("quick")
+  preferredExportFormat  String  @default("txt")
 }
 
 model Summary {
@@ -26,8 +30,36 @@ model Summary {
   mode            String   @default("quick")
   inputWordCount  Int      @default(0)
   outputWordCount Int      @default(0)
+  promptVersion   String?
+  qualityScore    Int?
+  qualityFlags    String[] @default([])
   createdAt       DateTime @default(now())
+  sharedSummary   SharedSummary?
+  chatMessages    ChatMessage[]
 
   @@index([userId])
   @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([userId, mode])
+  @@index([userId, provider])
+}
+
+model SharedSummary {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  summaryId String    @unique
+  summary   Summary   @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  summaryId String
+  summary   Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([summaryId, createdAt])
 }
