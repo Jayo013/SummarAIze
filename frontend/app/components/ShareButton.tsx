@@ -6,6 +6,7 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import Alert from "./ui/Alert";
+import { getErrorMessage } from "../lib/errors";
 
 interface ShareInfo {
   token: string;
@@ -49,8 +50,8 @@ export default function ShareButton({
       if (!res.ok) throw new Error(data?.error || "Failed to load share status.");
       setShare(data.share ?? null);
       setStatusLoaded(true);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load share status.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to load share status."));
     } finally {
       setLoading(false);
     }
@@ -76,8 +77,8 @@ export default function ShareButton({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to create share link.");
       setShare(data.share);
-    } catch (err: any) {
-      setError(err?.message || "Failed to create share link.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to create share link."));
     } finally {
       setLoading(false);
     }
@@ -97,8 +98,8 @@ export default function ShareButton({
         throw new Error(data?.error || "Failed to revoke share link.");
       }
       setShare(null);
-    } catch (err: any) {
-      setError(err?.message || "Failed to revoke share link.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to revoke share link."));
     } finally {
       setLoading(false);
     }

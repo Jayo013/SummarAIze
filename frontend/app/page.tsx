@@ -13,6 +13,7 @@ import DemoSection from "./components/landing/DemoSection";
 import CTASection from "./components/landing/CTASection";
 import Footer from "./components/landing/Footer";
 import Alert from "./components/ui/Alert";
+import { getErrorMessage } from "./lib/errors";
 
 const MAX_CHARS = 20000;
 const LS_TEXT = "summarize:text";
@@ -180,8 +181,9 @@ export default function Home() {
       });
       if (!token) throw new Error("No access token");
       return token;
-    } catch (e: any) {
-      const code = String(e?.error || e?.code || "").toLowerCase();
+    } catch (e: unknown) {
+      const errObj = e as { error?: string; code?: string } | undefined;
+      const code = String(errObj?.error || errObj?.code || "").toLowerCase();
       if (
         code.includes("login_required") ||
         code.includes("consent_required") ||
@@ -253,7 +255,7 @@ export default function Home() {
         body: JSON.stringify({ text: trimmed, mode }),
       });
 
-      const data = await res.json().catch(() => ({} as any));
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg =
           (data?.detail as string) ||
@@ -266,8 +268,8 @@ export default function Home() {
       setSummaryId(typeof data?.id === "string" ? data.id : null);
       setQualityScore(typeof data?.qualityScore === "number" ? data.qualityScore : null);
       setQualityFlags(Array.isArray(data?.qualityFlags) ? data.qualityFlags : []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to summarize.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to summarize."));
     } finally {
       setLoading(false);
     }
@@ -306,7 +308,7 @@ export default function Home() {
         body: formData,
       });
 
-      const data = await res.json().catch(() => ({} as any));
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((data?.error as string) || `Upload failed (${res.status})`);
       }
@@ -319,8 +321,8 @@ export default function Home() {
           ? `Loaded "${data.fileName}" — text was truncated to ${MAX_CHARS.toLocaleString()} characters.`
           : `Loaded "${data.fileName}" (${data.charCount.toLocaleString()} characters).`
       );
-    } catch (err: any) {
-      setError(err?.message || "Failed to extract text from file.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to extract text from file."));
     } finally {
       setUploading(false);
     }

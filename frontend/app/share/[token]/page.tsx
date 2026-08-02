@@ -12,6 +12,7 @@ import Badge from "../../components/ui/Badge";
 import Alert from "../../components/ui/Alert";
 import Skeleton from "../../components/ui/Skeleton";
 import Button from "../../components/ui/Button";
+import { getErrorMessage } from "../../lib/errors";
 
 interface PublicShare {
   summary: string;
@@ -55,8 +56,8 @@ export default function SharedSummaryPage() {
           throw new Error(json?.error || "This link doesn't exist or has expired.");
         }
         if (!cancelled) setData(json);
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || "Failed to load shared summary.");
+      } catch (err: unknown) {
+        if (!cancelled) setError(getErrorMessage(err, "Failed to load shared summary."));
       } finally {
         if (!cancelled) setLoading(false);
       }

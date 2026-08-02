@@ -13,6 +13,7 @@ import Alert from "../components/ui/Alert";
 import Badge from "../components/ui/Badge";
 import Skeleton from "../components/ui/Skeleton";
 import { fadeUp, stagger } from "../components/ui/motion";
+import { getErrorMessage } from "../lib/errors";
 
 interface ActivityItem {
   id: string;
@@ -111,8 +112,8 @@ export default function Dashboard() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
         if (!cancelled) setStats(data);
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || "Failed to load dashboard.");
+      } catch (err: unknown) {
+        if (!cancelled) setError(getErrorMessage(err, "Failed to load dashboard."));
       } finally {
         if (!cancelled) setLoading(false);
       }

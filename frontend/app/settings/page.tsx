@@ -10,6 +10,7 @@ import GlassCard from "../components/ui/GlassCard";
 import Button from "../components/ui/Button";
 import Select from "../components/ui/Select";
 import Alert from "../components/ui/Alert";
+import { getErrorMessage } from "../lib/errors";
 
 interface Settings {
   preferredProvider: string | null;
@@ -79,8 +80,8 @@ export default function SettingsPage() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
         if (!cancelled) setSettings(data);
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || "Failed to load settings.");
+      } catch (err: unknown) {
+        if (!cancelled) setError(getErrorMessage(err, "Failed to load settings."));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -115,8 +116,8 @@ export default function SettingsPage() {
       setSettings(data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (err: any) {
-      setError(err?.message || "Failed to save settings.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to save settings."));
     } finally {
       setSaving(false);
     }

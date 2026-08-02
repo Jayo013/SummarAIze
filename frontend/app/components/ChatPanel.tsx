@@ -5,6 +5,7 @@ import { MessageCircle, Send } from "lucide-react";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Alert from "./ui/Alert";
+import { getErrorMessage } from "../lib/errors";
 
 interface ChatMessage {
   id: string;
@@ -44,8 +45,8 @@ export default function ChatPanel({
       if (!res.ok) throw new Error(data?.error || "Failed to load chat history.");
       setMessages(data.messages ?? []);
       setLoaded(true);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load chat history.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to load chat history."));
     } finally {
       setLoading(false);
     }
@@ -93,8 +94,8 @@ export default function ChatPanel({
         data.userMessage,
         data.assistantMessage,
       ]);
-    } catch (err: any) {
-      setError(err?.message || "Failed to get a reply.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to get a reply."));
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setQuestion(trimmed);
     } finally {
@@ -116,8 +117,8 @@ export default function ChatPanel({
         throw new Error(data?.error || "Failed to clear chat.");
       }
       setMessages([]);
-    } catch (err: any) {
-      setError(err?.message || "Failed to clear chat.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to clear chat."));
     } finally {
       setLoading(false);
     }

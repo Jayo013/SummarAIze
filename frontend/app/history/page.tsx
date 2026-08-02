@@ -13,6 +13,7 @@ import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
 import Alert from "../components/ui/Alert";
+import { getErrorMessage } from "../lib/errors";
 import Skeleton from "../components/ui/Skeleton";
 import Badge from "../components/ui/Badge";
 
@@ -136,8 +137,8 @@ export default function History() {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`);
         if (!cancelled) setData(json);
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || "Failed to load summary history.");
+      } catch (err: unknown) {
+        if (!cancelled) setError(getErrorMessage(err, "Failed to load summary history."));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -164,7 +165,7 @@ export default function History() {
       <Container size="wide" className="py-8 sm:py-10">
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">History</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Search and revisit everything you've summarized.</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Search and revisit everything you&apos;ve summarized.</p>
         </div>
 
         {authLoading ? (
