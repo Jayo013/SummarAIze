@@ -1,4 +1,7 @@
 import { prisma } from "../lib/prisma";
+import { getOrSetCache } from "../utils/cache";
+
+const DASHBOARD_CACHE_TTL_MS = 60_000;
 
 export interface DashboardStats {
   totalSummaries: number;
@@ -25,6 +28,10 @@ const EMPTY_STATS: DashboardStats = {
 };
 
 export async function getDashboardStats(auth0Sub: string): Promise<DashboardStats> {
+  return getOrSetCache(`dashboard:${auth0Sub}`, DASHBOARD_CACHE_TTL_MS, () => computeDashboardStats(auth0Sub));
+}
+
+async function computeDashboardStats(auth0Sub: string): Promise<DashboardStats> {
   const user = await prisma.user.findUnique({ where: { auth0Sub } });
   if (!user) return EMPTY_STATS;
 
