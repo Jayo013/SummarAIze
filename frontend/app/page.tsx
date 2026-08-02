@@ -1,31 +1,50 @@
 "use client";
-import { useEffect, useState, FormEvent } from "react";
-import Link from "next/link";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { SUMMARY_MODES, SUMMARY_MODE_LABELS, type SummaryMode } from "./summaryModes";
+import { SUMMARY_MODES, type SummaryMode } from "./summaryModes";
+import Navbar from "./components/ui/Navbar";
+import Container from "./components/ui/Container";
+import WorkspaceInput from "./components/WorkspaceInput";
+import WorkspaceOutput from "./components/WorkspaceOutput";
+import Hero from "./components/landing/Hero";
+import Features from "./components/landing/Features";
+import TrustSection from "./components/landing/TrustSection";
+import DemoSection from "./components/landing/DemoSection";
+import CTASection from "./components/landing/CTASection";
+import Footer from "./components/landing/Footer";
+import Alert from "./components/ui/Alert";
 
 const MAX_CHARS = 20000;
 const LS_TEXT = "summarize:text";
 const LS_RESUME = "summarize:resume";
 const LS_MODE = "summarize:mode";
 
+interface RemoteSettings {
+  preferredProvider: string | null;
+  preferredMode: string;
+  preferredExportFormat: string;
+}
+
 export default function Home() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SummaryMode>("quick");
   const [summary, setSummary] = useState("");
   const [summaryProvider, setSummaryProvider] = useState("");
+  const [summaryId, setSummaryId] = useState<string | null>(null);
+  const [qualityScore, setQualityScore] = useState<number | null>(null);
+  const [qualityFlags, setQualityFlags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [preferredExportFormat, setPreferredExportFormat] = useState<"txt" | "pdf">("txt");
+  const [remoteSettings, setRemoteSettings] = useState<RemoteSettings | null>(null);
 
   const {
     isAuthenticated,
     isLoading: authLoading,
     loginWithRedirect,
-    logout,
     getAccessTokenSilently,
-    user,
     error: authError,
   } = useAuth0();
 
@@ -52,20 +71,17 @@ export default function Home() {
     const marginX = 48;
     let y = 64;
 
-    // Title
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.text("SummarAIze — Summary", marginX, y);
     y += 24;
 
-    // Meta
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generated: ${new Date().toLocaleString()}`, marginX, y);
     y += 20;
 
-    // Body
     doc.setTextColor(0);
     doc.setFontSize(12);
     const maxWidth = doc.internal.pageSize.getWidth() - marginX * 2;
@@ -119,6 +135,44 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
+  // Apply saved preferences: preferred mode only fills in when the user has no
+  // locally-remembered mode yet, so it never overrides an in-session choice.
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || !apiBase) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getApiToken();
+        const res = await fetch(`${apiBase}/settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+
+        setRemoteSettings({
+          preferredProvider: data?.preferredProvider ?? null,
+          preferredMode: SUMMARY_MODES.includes(data?.preferredMode) ? data.preferredMode : "quick",
+          preferredExportFormat: data?.preferredExportFormat === "pdf" ? "pdf" : "txt",
+        });
+
+        if (typeof data?.preferredExportFormat === "string") {
+          setPreferredExportFormat(data.preferredExportFormat === "pdf" ? "pdf" : "txt");
+        }
+
+        const hasLocalMode = typeof window !== "undefined" && localStorage.getItem(LS_MODE);
+        if (!hasLocalMode && SUMMARY_MODES.includes(data?.preferredMode)) {
+          setMode(data.preferredMode);
+        }
+      } catch {
+        /* non-critical: summarizer still works with hardcoded defaults */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, isAuthenticated, apiBase]);
+
   async function getApiToken(): Promise<string> {
     try {
       const token = await getAccessTokenSilently({
@@ -145,6 +199,33 @@ export default function Home() {
     }
   }
 
+  // Updates just the preferred provider, echoing back the rest of the settings
+  // object exactly as last fetched so we never clobber preferredMode/export format.
+  async function updatePreferredProvider(value: string) {
+    if (!remoteSettings || !apiBase) return;
+    const next = { ...remoteSettings, preferredProvider: value || null };
+    setRemoteSettings(next);
+    try {
+      const token = await getApiToken();
+      const res = await fetch(`${apiBase}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(next),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setRemoteSettings({
+          preferredProvider: data?.preferredProvider ?? null,
+          preferredMode: SUMMARY_MODES.includes(data?.preferredMode) ? data.preferredMode : "quick",
+          preferredExportFormat: data?.preferredExportFormat === "pdf" ? "pdf" : "txt",
+        });
+        setPreferredExportFormat(data?.preferredExportFormat === "pdf" ? "pdf" : "txt");
+      }
+    } catch {
+      /* non-critical: preference just won't persist this time */
+    }
+  }
+
   async function doSummarize(trimmed: string) {
     if (!apiBase) {
       setError(
@@ -156,6 +237,9 @@ export default function Home() {
     setLoading(true);
     setSummary("");
     setSummaryProvider("");
+    setSummaryId(null);
+    setQualityScore(null);
+    setQualityFlags([]);
     setError(null);
 
     try {
@@ -179,6 +263,9 @@ export default function Home() {
       }
       setSummary(typeof data?.summary === "string" ? data.summary : "");
       setSummaryProvider(typeof data?.provider === "string" ? data.provider : "");
+      setSummaryId(typeof data?.id === "string" ? data.id : null);
+      setQualityScore(typeof data?.qualityScore === "number" ? data.qualityScore : null);
+      setQualityFlags(Array.isArray(data?.qualityFlags) ? data.qualityFlags : []);
     } catch (err: any) {
       setError(err?.message || "Failed to summarize.");
     } finally {
@@ -189,11 +276,7 @@ export default function Home() {
   const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
   const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file later
-    if (!file) return;
-
+  async function handleFile(file: File) {
     setUploadNotice(null);
     setError(null);
 
@@ -254,159 +337,90 @@ export default function Home() {
     await doSummarize(trimmed);
   }
 
-  const chars = text.length;
-  const tooLong = chars > MAX_CHARS;
+  function handleGetStarted() {
+    loginWithRedirect({ authorizationParams: { audience, prompt: "login" } });
+  }
+
+  // Default to the marketing landing page whenever we don't yet have a confirmed,
+  // authenticated session (including while Auth0 is still resolving) — this avoids a
+  // blank "Loading…" flash for the common case of an anonymous visitor, since
+  // isAuthenticated only ever flips true once authLoading has already settled to false.
+  if (!isAuthenticated) {
+    return (
+      <main>
+        <Navbar />
+        <Hero onGetStarted={handleGetStarted} />
+        <Features />
+        <TrustSection />
+        <DemoSection />
+        <CTASection onGetStarted={handleGetStarted} />
+        <Footer />
+      </main>
+    );
+  }
 
   return (
-    <main className="max-w-3xl mx-auto p-6 space-y-6">
-      {/* Header with Login/Logout */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">SummarAIze</h1>
-        <div className="text-sm flex items-center gap-3">
-          <Link href="/dashboard" className="px-3 py-1 rounded border border-white/20 hover:border-white/40 transition">
-            Dashboard
-          </Link>
-          {authLoading ? (
-            <span>Auth…</span>
-          ) : isAuthenticated ? (
-            <>
-              <span className="opacity-70">{user?.name || user?.email}</span>
-              <button
-                className="px-3 py-1 rounded border"
-                onClick={() =>
-                  logout({ logoutParams: { returnTo: window.location.origin } })
-                }
-              >
-                Logout
-              </button>
-            </>
-          ) : (
-            <button
-              className="px-3 py-1 rounded border"
-              onClick={() =>
-                loginWithRedirect({
-                  authorizationParams: { audience, prompt: "login" },
-                })
-              }
-            >
-              Login
-            </button>
-          )}
+    <main className="min-h-screen">
+      <Navbar />
+      <Container size="wide" className="py-8 sm:py-10">
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Summarize</h1>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Paste your notes, or drop a document, and choose a style below.
+          </p>
         </div>
-      </div>
 
-      <p className="text-sm text-gray-400">Paste your notes and click Summarize.</p>
+        {authError && (
+          <Alert tone="danger" className="mb-4">
+            Auth error: {String(authError.message || authError)}
+          </Alert>
+        )}
 
-      <form onSubmit={handleSummarize} className="space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {SUMMARY_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => {
+        <div className="grid gap-6 lg:grid-cols-2 items-start">
+          <div className="lg:sticky lg:top-24">
+            <WorkspaceInput
+              mode={mode}
+              onModeChange={(m) => {
                 setMode(m);
                 if (typeof window !== "undefined") localStorage.setItem(LS_MODE, m);
               }}
-              className={`px-3 py-1.5 rounded-full text-sm border transition ${
-                mode === m
-                  ? "bg-blue-600 border-blue-600 text-white"
-                  : "border-white/20 text-gray-300 hover:border-white/40"
-              }`}
-              aria-pressed={mode === m}
-            >
-              {SUMMARY_MODE_LABELS[m]}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <label
-            className={`px-3 py-1.5 rounded-lg border border-white/20 cursor-pointer hover:border-white/40 transition ${
-              uploading ? "opacity-50 pointer-events-none" : ""
-            }`}
-          >
-            {uploading ? "Reading file…" : "Upload document (.pdf, .docx, .txt)"}
-            <input type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={handleFileChange} disabled={uploading} />
-          </label>
-          {uploadNotice && <span className="text-gray-400">{uploadNotice}</span>}
-        </div>
-        <textarea
-          className={`w-full h-48 p-3 rounded border outline-none ${
-            tooLong ? "border-red-500" : "border-white/20 bg-black/40"
-          } focus:ring-2 focus:ring-blue-600`}
-          placeholder="Paste your notes here…"
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (typeof window !== "undefined")
-              localStorage.setItem(LS_TEXT, e.target.value);
-          }}
-          aria-invalid={tooLong}
-          aria-describedby="charHelp"
-        />
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <span id="charHelp">
-            {tooLong ? (
-              <span className="text-red-500 font-semibold">
-                {chars.toLocaleString()} / {MAX_CHARS.toLocaleString()} (too long)
-              </span>
-            ) : (
-              <span>
-                {chars.toLocaleString()} / {MAX_CHARS.toLocaleString()}
-              </span>
-            )}
-          </span>
-          <button
-            type="submit"
-            className="px-6 py-2 rounded-lg bg-blue-600 text-white font-medium disabled:opacity-50 hover:bg-blue-500 transition"
-            disabled={!text.trim() || loading || tooLong}
-          >
-            {loading ? "Summarizing…" : "Summarize"}
-          </button>
-        </div>
-      </form>
-
-      {authError && (
-        <p className="text-sm text-red-500">
-          Auth error: {String(authError.message || authError)}
-        </p>
-      )}
-      {error && <p className="text-sm text-red-500">{error}</p>}
-
-      {summary && (
-        <section className="p-5 rounded-xl border border-white/10 bg-white/5 shadow-inner space-y-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">{SUMMARY_MODE_LABELS[mode]}</h2>
-            {summaryProvider && (
-              <span className="text-xs px-2 py-0.5 rounded-full border border-white/20 text-gray-400">
-                {summaryProvider}
-              </span>
-            )}
+              text={text}
+              onTextChange={(v) => {
+                setText(v);
+                if (typeof window !== "undefined") localStorage.setItem(LS_TEXT, v);
+              }}
+              uploading={uploading}
+              uploadNotice={uploadNotice}
+              onFile={handleFile}
+              onSubmit={handleSummarize}
+              loading={loading}
+              preferredProvider={remoteSettings?.preferredProvider ?? null}
+              onPreferredProviderChange={updatePreferredProvider}
+            />
           </div>
-          <pre className="whitespace-pre-wrap leading-relaxed">{summary}</pre>
 
-          {/* Export / Share actions */}
-          <div className="flex flex-wrap gap-2 pt-1">
-            <button
-              className="px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition"
-              onClick={() => downloadTxt(summary)}
-            >
-              Download .txt
-            </button>
-            <button
-              className="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition"
-              onClick={() => downloadPdf(summary)}
-            >
-              Download .pdf
-            </button>
-            <button
-              className="px-3 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition"
-              onClick={() => shareSummary(summary)}
-            >
-              Share
-            </button>
-          </div>
-        </section>
-      )}
+          <WorkspaceOutput
+            loading={loading}
+            summary={summary}
+            summaryProvider={summaryProvider}
+            summaryId={summaryId}
+            mode={mode}
+            qualityScore={qualityScore}
+            qualityFlags={qualityFlags}
+            error={error}
+            isAuthenticated={isAuthenticated}
+            apiBase={apiBase}
+            getToken={getApiToken}
+            preferredExportFormat={preferredExportFormat}
+            onDownloadPreferred={() =>
+              preferredExportFormat === "pdf" ? downloadPdf(summary) : downloadTxt(summary)
+            }
+            onDownloadTxt={() => downloadTxt(summary)}
+            onDownloadPdf={() => downloadPdf(summary)}
+            onShare={() => shareSummary(summary)}
+          />
+        </div>
+      </Container>
     </main>
   );
 }

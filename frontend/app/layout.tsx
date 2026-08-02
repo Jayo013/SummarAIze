@@ -1,9 +1,23 @@
+import type { Metadata } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import Providers from "./providers"; // 👈 import the Auth0 wrapper
+import Providers from "./providers";
 
-export const metadata = {
-  title: "SummarAIze",
-  description: "Summarize notes intelligently",
+const inter = Inter({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "SummarAIze — AI-Powered Summaries",
+  description: "Turn long documents into clear, structured summaries in seconds.",
 };
 
 export default function RootLayout({
@@ -12,9 +26,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-900 text-gray-100 min-h-screen">
-        <Providers>{children}</Providers> {/* ✅ wrap all pages */}
+    <html lang="en" className="dark">
+      <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
